@@ -1,0 +1,65 @@
+# Broker Configuration
+broker:
+  name: "zerodha"  # Options: zerodha, upstox, alice_blue, icici_direct
+  api_key: "your_api_key_here"
+  api_secret: "your_api_secret_here"
+  access_token: "your_access_token_here"
+  user_id: "your_user_id_here"
+
+# Strategy Parameters
+strategy:
+  capital: 500000  # Total capital in INR
+  max_risk_per_trade: 0.05  # 5% max risk per trade
+  profit_target: 0.10  # 10% profit target
+  
+  # Strike calculation percentages
+  strike_percentages:
+    - 0.5
+    - 1.0
+    - 1.5
+    - 2.0
+  
+  # Execution timing
+  execution_time: "15:00"  # 3:00 PM IST
+  timezone: "Asia/Kolkata"
+
+# Market Data
+market_data:
+  primary_source: "broker"  # Options: broker, external_api
+  backup_source: "yahoo"
+  
+# Risk Management
+risk:
+  max_positions: 10
+  margin_buffer: 1.2  # 20% margin buffer
+  max_drawdown: 0.15  # 15% max drawdown
+  
+# Logging
+logging:
+  level: "INFO"
+  file: "logs/trading.log"
+  max_size_mb: 10
+  backup_count: 5
+
+# Backtesting
+backtest:
+  start_date: "2024-01-01"
+  end_date: "2024-12-31"
+  initial_capital: 500000
+  commission: 20  # Per trade commission
+
+# Notifications
+notifications:
+  enabled: true
+  email:
+    smtp_server: "smtp.gmail.com"
+    smtp_port: 587
+    username: "your_email@gmail.com"
+    password: "your_app_password"
+    to_addresses:
+      - "trader@example.com"
+  
+  telegram:
+    enabled: false
+    bot_token: "your_bot_token"
+    chat_id: "your_chat_id"

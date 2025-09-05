@@ -1,0 +1,15 @@
+pandas>=2.0.0
+numpy>=1.24.0
+pytz>=2023.3
+python-dateutil>=2.8.2
+requests>=2.31.0
+pyyaml>=6.0
+schedule>=1.2.0
+logging>=0.4.9.6
+dataclasses>=0.6
+typing-extensions>=4.7.0
+websocket-client>=1.6.0
+kiteconnect>=4.2.0
+alice-blue>=2.0.0
+upstox-python>=2.0.0
+zerodha-kite>=3.9.0
