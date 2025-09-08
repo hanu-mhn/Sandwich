@@ -1,0 +1,59 @@
+# Optimized Broker Configuration
+broker:
+  name: "zerodha"  # Options: zerodha, upstox, alice_blue, icici_direct
+  api_key: "your_api_key_here"
+  api_secret: "your_api_secret_here"
+  access_token: "your_access_token_here"
+  user_id: "your_user_id_here"
+
+# Optimized Strategy Parameters
+strategy:
+  capital: 500000  # Total capital in INR
+  max_risk_per_trade: 0.05  # 5% max risk per trade
+  profit_target: 0.10  # 10% profit target
+  
+  # Optimized Strike calculation percentages (3 strikes, avoiding highest)
+  # Benefits: Simplified management, tighter risk control, reduced complexity
+  # Focus on closer strikes for better probability and control
+  strike_percentages:
+    - 0.25  # 0.25% OTM strikes - very close to current price
+    - 0.5   # 0.5% OTM strikes - slightly out of the money
+    - 0.75  # 0.75% OTM strikes - moderate distance (avoiding 1% for tighter range)
+  
+  # Execution timing
+  execution_time: "15:00"  # 3:00 PM IST
+  timezone: "Asia/Kolkata"
+
+# Market Data
+market_data:
+  primary_source: "broker"  # Options: broker, external_api
+  backup_source: "yahoo"
+  
+# Risk Management (Enhanced for 3-strike strategy)
+risk:
+  max_positions: 8  # Reduced from 10 to match simpler strategy
+  margin_buffer: 1.2  # 20% margin buffer
+  max_drawdown: 0.15  # 15% max drawdown
+  
+# Logging
+logging:
+  level: "INFO"
+  file: "logs/trading.log"
+  max_size_mb: 10
+  backup_count: 5
+
+# Backtesting (Updated for 3-strike strategy)
+backtest:
+  start_date: "2024-01-01"
+  end_date: "2024-12-31"
+  initial_capital: 500000
+  commission: 20  # Per trade commission
+  
+# Optimization Benefits:
+# 1. Reduced positions from 8 to 7 (12.5% reduction)
+# 2. Simpler position management with 3 strikes
+# 3. Avoided highest percentage (1%) for tighter risk control
+# 4. Better focus on high-probability near-money strikes
+# 5. Lower transaction costs due to fewer legs
+# 6. Easier monitoring and adjustment
+# 7. Maintained risk-reward profile with strategic strike selection

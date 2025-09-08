@@ -15,10 +15,10 @@ from pathlib import Path
 # Add src to path
 sys.path.append(str(Path(__file__).parent / 'src'))
 
-from utils.config_loader import ConfigLoader
-from utils.logger import setup_logging
-from utils.expiry_calculator import ExpiryCalculator
-from strategy.bank_nifty_strategy import BankNiftyStrategy
+from src.utils.config_loader import ConfigLoader
+from src.utils.logger import setup_logging
+from src.utils.expiry_calculator import ExpiryCalculator
+from src.strategy.bank_nifty_strategy import BankNiftyStrategy
 
 
 class StrategyScheduler:

@@ -85,8 +85,11 @@ class ConfigLoader:
         if not isinstance(strategy_config['strike_percentages'], list):
             raise ValueError("strike_percentages must be a list")
         
-        if len(strategy_config['strike_percentages']) != 4:
-            raise ValueError("strike_percentages must contain exactly 4 values")
+        if len(strategy_config['strike_percentages']) < 2:
+            raise ValueError("strike_percentages must contain at least 2 values")
+        
+        if len(strategy_config['strike_percentages']) > 6:
+            raise ValueError("strike_percentages must contain at most 6 values for risk management")
         
         # Validate profit target
         if not 0 < strategy_config['profit_target'] <= 1:

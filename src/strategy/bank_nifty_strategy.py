@@ -120,17 +120,46 @@ class BankNiftyStrategy:
                 self.logger.info("No positions to monitor")
                 return
             
+            # Check if we're at current month expiry day (execution day)
+            current_date = datetime.now().date()
+            current_time = datetime.now().time()
+            current_expiry_date = self.expiry_calc.get_current_expiry_date(current_date)
+            
+            # Check if it's expiry day and market is about to close
+            is_expiry_day = current_date == current_expiry_date
+            is_exit_time = current_time.hour >= 15 and current_time.minute >= 25  # 3:25 PM
+            
             # Calculate current P&L
             self.current_pnl = self._calculate_current_pnl()
             pnl_percentage = (self.current_pnl / self.entry_capital) * 100 if self.entry_capital > 0 else 0
             
             self.logger.info(f"Current P&L: ₹{self.current_pnl:,.2f} ({pnl_percentage:.2f}%)")
             
-            # Check exit condition
+            # Exit conditions
+            exit_reason = None
+            
+            # 1. Check 10% profit target
             if pnl_percentage >= (self.profit_target * 100):
-                self.logger.info(f"Profit target of {self.profit_target*100:.1f}% reached. Exiting all positions...")
-                self._exit_all_positions()
+                exit_reason = f"Profit target of {self.profit_target*100:.1f}% reached"
+            
+            # 2. Check expiry day exit (at 3:25 PM on expiry day) - market price exit
+            elif is_expiry_day and is_exit_time:
+                exit_reason = "Expiry day - 3:25 PM market price exit"
+            
+            # Execute exit if any condition is met
+            if exit_reason:
+                self.logger.info(f"{exit_reason}. Exiting all positions at market price...")
+                success = self._exit_all_positions_at_market()
                 
+                if success:
+                    self.logger.info(f"All positions exited successfully at market price. Reason: {exit_reason}")
+                    
+                    # Log final performance
+                    final_return_pct = (self.current_pnl / self.entry_capital) * 100 if self.entry_capital > 0 else 0
+                    self.logger.info(f"Final P&L: ₹{self.current_pnl:,.2f} ({final_return_pct:.2f}%)")
+                else:
+                    self.logger.error("Failed to exit some positions")
+                    
         except Exception as e:
             self.logger.error(f"Error monitoring positions: {str(e)}", exc_info=True)
     
@@ -206,12 +235,24 @@ class BankNiftyStrategy:
             bool: True if all trades executed successfully
         """
         try:
-            # Get current month expiry for options
+            # Get next month expiry for options and futures (July when executing on June expiry)
             current_date = datetime.now().date()
-            expiry_date = self.expiry_calc.get_current_expiry_date(current_date)
-            expiry_str = expiry_date.strftime('%y%m%d')
+            current_expiry_date = self.expiry_calc.get_current_expiry_date(current_date)
             
-            # 1. Sell Bank Nifty Futures (1 lot)
+            # Calculate next month's expiry date
+            next_month = current_expiry_date.month + 1
+            next_year = current_expiry_date.year
+            if next_month > 12:
+                next_month = 1
+                next_year += 1
+            
+            next_expiry_date = self.expiry_calc.get_monthly_expiry_date(next_year, next_month)
+            expiry_str = next_expiry_date.strftime('%y%m%d')
+            
+            self.logger.info(f"Executing on {current_expiry_date} expiry day")
+            self.logger.info(f"Using {next_expiry_date} expiry instruments (next month)")
+            
+            # 1. Sell Bank Nifty Futures (1 lot) - Next month expiry
             futures_symbol = f"BANKNIFTY{expiry_str}FUT"
             futures_position = self._place_order(
                 symbol=futures_symbol,
@@ -222,52 +263,51 @@ class BankNiftyStrategy:
             if futures_position:
                 self.positions.append(futures_position)
             
-            # 2. Put Options Strategy
+            # 2. Put Options Strategy (Custom Structure)
             put_strikes = strikes['puts']
             
-            # Buy 1 lot at lowest strike (farthest OTM)
-            lowest_put = f"BANKNIFTY{expiry_str}{int(put_strikes[-1])}PE"
-            put_pos1 = self._place_order(lowest_put, "BUY", 1, "MARKET")
-            if put_pos1:
-                self.positions.append(put_pos1)
+            # BUY 2 lots at 0.75% strike (farthest OTM)
+            if len(put_strikes) >= 3:
+                put_075_strike = f"BANKNIFTY{expiry_str}{int(put_strikes[2])}PE"  # 0.75% = index 2
+                put_pos1 = self._place_order(put_075_strike, "BUY", 2, "MARKET")
+                if put_pos1:
+                    self.positions.append(put_pos1)
             
-            # Sell 1 lot at highest strike (nearest to CMP)
-            highest_put = f"BANKNIFTY{expiry_str}{int(put_strikes[0])}PE"
-            put_pos2 = self._place_order(highest_put, "SELL", 1, "MARKET")
+            # SELL 1 lot at 0.25% strike (nearest to CMP)
+            put_025_strike = f"BANKNIFTY{expiry_str}{int(put_strikes[0])}PE"  # 0.25% = index 0
+            put_pos2 = self._place_order(put_025_strike, "SELL", 1, "MARKET")
             if put_pos2:
                 self.positions.append(put_pos2)
             
-            # Buy 1 lot each at middle strikes
-            for i in [1, 2]:  # Middle two strikes
-                if i < len(put_strikes):
-                    middle_put = f"BANKNIFTY{expiry_str}{int(put_strikes[i])}PE"
-                    put_pos = self._place_order(middle_put, "BUY", 1, "MARKET")
-                    if put_pos:
-                        self.positions.append(put_pos)
+            # SELL 2 lots at 0.5% strike (middle)
+            if len(put_strikes) >= 2:
+                put_050_strike = f"BANKNIFTY{expiry_str}{int(put_strikes[1])}PE"  # 0.5% = index 1
+                put_pos3 = self._place_order(put_050_strike, "SELL", 2, "MARKET")
+                if put_pos3:
+                    self.positions.append(put_pos3)
             
-            # 3. Call Options Strategy
+            # 3. Call Options Strategy (Custom Structure)
             call_strikes = strikes['calls']
             
-            # Buy 1 lot at nearest strike (closest to CMP)
-            nearest_call = f"BANKNIFTY{expiry_str}{int(call_strikes[0])}CE"
-            call_pos1 = self._place_order(nearest_call, "BUY", 1, "MARKET")
+            # BUY 1 lot at 0.25% strike (nearest to CMP)
+            call_025_strike = f"BANKNIFTY{expiry_str}{int(call_strikes[0])}CE"  # 0.25% = index 0
+            call_pos1 = self._place_order(call_025_strike, "BUY", 1, "MARKET")
             if call_pos1:
                 self.positions.append(call_pos1)
             
-            # Sell 2 lots at middle strikes
-            for i in [1, 2]:  # Middle two strikes
-                if i < len(call_strikes):
-                    middle_call = f"BANKNIFTY{expiry_str}{int(call_strikes[i])}CE"
-                    call_pos = self._place_order(middle_call, "SELL", 2, "MARKET")
-                    if call_pos:
-                        self.positions.append(call_pos)
-            
-            # Buy 2 lots at farthest strike
-            if len(call_strikes) >= 4:
-                farthest_call = f"BANKNIFTY{expiry_str}{int(call_strikes[-1])}CE"
-                call_pos2 = self._place_order(farthest_call, "BUY", 2, "MARKET")
+            # SELL 2 lots at 0.5% strike (middle)
+            if len(call_strikes) >= 2:
+                call_050_strike = f"BANKNIFTY{expiry_str}{int(call_strikes[1])}CE"  # 0.5% = index 1
+                call_pos2 = self._place_order(call_050_strike, "SELL", 2, "MARKET")
                 if call_pos2:
                     self.positions.append(call_pos2)
+            
+            # BUY 2 lots at 0.75% strike (farthest OTM)
+            if len(call_strikes) >= 3:
+                call_075_strike = f"BANKNIFTY{expiry_str}{int(call_strikes[2])}CE"  # 0.75% = index 2
+                call_pos3 = self._place_order(call_075_strike, "BUY", 2, "MARKET")
+                if call_pos3:
+                    self.positions.append(call_pos3)
             
             self.logger.info(f"Executed {len(self.positions)} positions")
             return len(self.positions) > 0
@@ -394,8 +434,96 @@ class BankNiftyStrategy:
             self.logger.error(f"Failed to exit positions: {str(e)}", exc_info=True)
             return False
     
+    def _exit_all_positions_at_market(self) -> bool:
+        """Exit all positions at market price with detailed logging"""
+        try:
+            exit_orders = []
+            
+            self.logger.info("Exiting all positions at market price...")
+            
+            for position in self.positions:
+                # Reverse the action to close position
+                exit_action = "SELL" if position.action == "BUY" else "BUY"
+                
+                self.logger.info(f"Closing position: {exit_action} {position.quantity} lots of {position.instrument}")
+                
+                exit_order = self._place_order(
+                    symbol=position.instrument,
+                    action=exit_action,
+                    quantity=position.quantity,
+                    order_type="MARKET"
+                )
+                
+                if exit_order:
+                    exit_orders.append(exit_order)
+                    self.logger.info(f"Exit order placed successfully")
+                else:
+                    self.logger.error(f"Failed to place exit order for {position.instrument}")
+            
+            if exit_orders:
+                self.logger.info(f"Successfully exited {len(exit_orders)} positions at market price")
+                
+                # Send exit notification
+                final_pnl = self._calculate_current_pnl()
+                self.notification_manager.send_exit_notification(
+                    final_pnl, self.entry_capital
+                )
+                
+                # Clear positions
+                self.positions.clear()
+                return True
+            else:
+                self.logger.error("No positions were successfully exited")
+                return False
+            
+        except Exception as e:
+            self.logger.error(f"Failed to exit positions at market price: {str(e)}", exc_info=True)
+            return False
+    
     def _start_monitoring(self) -> None:
         """Start position monitoring loop"""
         self.logger.info("Starting position monitoring...")
+        self.logger.info("Monitoring conditions:")
+        self.logger.info("1. Exit at 10% profit target")
+        self.logger.info("2. Exit at 3:25 PM on expiry day (current month) at market price")
+        self.logger.info("Note: Using next month expiry instruments for longer time to expiry")
         # This would typically run in a separate thread or be called periodically
         # For now, we'll just log that monitoring has started
+    
+    def should_exit_positions(self) -> tuple[bool, str]:
+        """
+        Check if positions should be exited based on current conditions
+        
+        Returns:
+            tuple: (should_exit: bool, reason: str)
+        """
+        try:
+            if not self.positions:
+                return False, "No positions to exit"
+            
+            # Check if we're at current month expiry day (execution day)
+            current_date = datetime.now().date()
+            current_time = datetime.now().time()
+            current_expiry_date = self.expiry_calc.get_current_expiry_date(current_date)
+            
+            # Check if it's expiry day and 3:25 PM
+            is_expiry_day = current_date == current_expiry_date
+            is_exit_time = current_time.hour >= 15 and current_time.minute >= 25  # 3:25 PM
+            
+            # Calculate current P&L
+            self.current_pnl = self._calculate_current_pnl()
+            pnl_percentage = (self.current_pnl / self.entry_capital) * 100 if self.entry_capital > 0 else 0
+            
+            # 1. Check 10% profit target
+            if pnl_percentage >= (self.profit_target * 100):
+                return True, f"Profit target of {self.profit_target*100:.1f}% reached ({pnl_percentage:.2f}%)"
+            
+            # 2. Check expiry day exit (at 3:25 PM on expiry day)
+            if is_expiry_day and is_exit_time:
+                return True, f"Expiry day - 3:25 PM market price exit (P&L: {pnl_percentage:.2f}%)"
+            
+            return False, f"Continue monitoring (P&L: {pnl_percentage:.2f}%)"
+            
+        except Exception as e:
+            self.logger.error(f"Error checking exit conditions: {str(e)}", exc_info=True)
+            return False, f"Error checking exit conditions: {str(e)}"

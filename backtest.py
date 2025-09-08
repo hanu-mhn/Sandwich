@@ -16,9 +16,9 @@ from typing import Dict, List, Tuple
 # Add src to path
 sys.path.append(str(Path(__file__).parent / 'src'))
 
-from utils.config_loader import ConfigLoader
-from utils.logger import setup_logging
-from utils.expiry_calculator import ExpiryCalculator
+from src.utils.config_loader import ConfigLoader
+from src.utils.logger import setup_logging
+from src.utils.expiry_calculator import ExpiryCalculator
 
 
 class BacktestEngine:
@@ -183,7 +183,7 @@ class BacktestEngine:
         
         # Calculate P&L
         gross_pnl = capital_deployed * return_pct
-        commission_cost = self.commission * 8  # Assume 8 legs on average
+        commission_cost = self.commission * 7  # 7 legs (reduced from 8)
         net_pnl = gross_pnl - commission_cost
         
         return {
@@ -193,7 +193,7 @@ class BacktestEngine:
             'commission': commission_cost,
             'pnl': net_pnl,
             'return_pct': return_pct * 100,
-            'positions': 8  # Mock number of positions
+            'positions': 7  # Reduced number of positions
         }
     
     def _calculate_backtest_results(self) -> Dict:

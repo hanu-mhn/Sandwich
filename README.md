@@ -4,16 +4,16 @@ A Python-based automated trading system for executing a sophisticated Bank Nifty
 
 ## Strategy Overview
 
-This system automates a multi-leg trading strategy that:
-- Executes on the previous month's expiry day at 3:00 PM IST
-- Uses Bank Nifty futures and options with calculated strikes
+This system automates a calendar spread trading strategy that:
+- Executes on current month's expiry day at 3:00 PM IST (e.g., June expiry)
+- Uses next month's Bank Nifty futures and options (e.g., July expiry)
 - Targets 10% profit on deployed capital
 - Handles the NSE expiry rule change (Thursday to Tuesday from Sept 2025)
 
 ## Features
 
 - **Automated Execution**: Precise timing at 3:00 PM IST on expiry days
-- **Dynamic Strike Calculation**: ±0.5%, 1%, 1.5%, 2% from current price
+- **Dynamic Strike Calculation**: ±0.25%, 0.5%, 0.75% from current price
 - **Multi-leg Position Management**: Complex options spreads with futures
 - **Risk Management**: 10% profit target with automatic exit
 - **Broker Integration**: Support for popular Indian brokers
@@ -66,18 +66,20 @@ python src/scheduler.py
 ## Strategy Details
 
 ### Position Structure
-- **Futures**: 1 lot short Bank Nifty current month
-- **Put Options**: 1 buy (lowest), 1 sell (nearest), 2 buy (middle)
-- **Call Options**: 1 buy (nearest), 2 sell (middle), 2 buy (farthest)
+- **Futures**: 1 lot short next month Bank Nifty futures
+- **Put Options**: 2 buy (0.75%), 1 sell (0.25%), 2 sell (0.5%) - next month expiry
+- **Call Options**: 1 buy (0.25%), 2 sell (0.5%), 2 buy (0.75%) - next month expiry
 
 ### Entry Rules
-- Execute at 3:00 PM IST on monthly expiry day
+- Execute at 3:00 PM IST on current month expiry day
+- Use next month's expiry instruments for longer time to expiry
 - Calculate strikes based on current futures price
 - Round strikes to nearest 100
 
 ### Exit Rules
 - Monitor combined P&L continuously
 - Exit all positions at 10% profit target
+- Auto-exit at 3:25 PM on current month expiry day at market price
 
 ## Risk Considerations
 
