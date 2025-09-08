@@ -119,47 +119,47 @@ class BankNiftyStrategy:
             if not self.positions:
                 self.logger.info("No positions to monitor")
                 return
-            
+
             # Check if we're at current month expiry day (execution day)
             current_date = datetime.now().date()
             current_time = datetime.now().time()
             current_expiry_date = self.expiry_calc.get_current_expiry_date(current_date)
-            
-            # Check if it's expiry day and market is about to close
+
+            # Only allow 3:25pm auto exit on expiry day
             is_expiry_day = current_date == current_expiry_date
             is_exit_time = current_time.hour >= 15 and current_time.minute >= 25  # 3:25 PM
-            
+
             # Calculate current P&L
             self.current_pnl = self._calculate_current_pnl()
             pnl_percentage = (self.current_pnl / self.entry_capital) * 100 if self.entry_capital > 0 else 0
-            
+
             self.logger.info(f"Current P&L: ₹{self.current_pnl:,.2f} ({pnl_percentage:.2f}%)")
-            
+
             # Exit conditions
             exit_reason = None
-            
+
             # 1. Check 10% profit target
             if pnl_percentage >= (self.profit_target * 100):
                 exit_reason = f"Profit target of {self.profit_target*100:.1f}% reached"
-            
+
             # 2. Check expiry day exit (at 3:25 PM on expiry day) - market price exit
             elif is_expiry_day and is_exit_time:
                 exit_reason = "Expiry day - 3:25 PM market price exit"
-            
+
             # Execute exit if any condition is met
             if exit_reason:
                 self.logger.info(f"{exit_reason}. Exiting all positions at market price...")
                 success = self._exit_all_positions_at_market()
-                
+
                 if success:
                     self.logger.info(f"All positions exited successfully at market price. Reason: {exit_reason}")
-                    
+
                     # Log final performance
                     final_return_pct = (self.current_pnl / self.entry_capital) * 100 if self.entry_capital > 0 else 0
                     self.logger.info(f"Final P&L: ₹{self.current_pnl:,.2f} ({final_return_pct:.2f}%)")
                 else:
                     self.logger.error("Failed to exit some positions")
-                    
+
         except Exception as e:
             self.logger.error(f"Error monitoring positions: {str(e)}", exc_info=True)
     
