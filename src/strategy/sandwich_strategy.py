@@ -195,6 +195,42 @@ class SandwichStrategy:
                     if spot_now > upper_strike:
                         self._convert_to_straddle(upper_strike)
 
+    # ---------------------------- Metrics API ---------------------------- #
+    def get_metrics(self) -> Dict[str, any]:
+        """Return current strategy metrics as a dictionary."""
+        total_pnl, pnl_pct = self._portfolio_pnl()
+        open_legs = [l for l in self.legs if l.open]
+        closed_legs = [l for l in self.legs if not l.open]
+        role_counts: Dict[str, int] = {}
+        for leg in open_legs:
+            role_counts[leg.role] = role_counts.get(leg.role, 0) + 1
+        long_pnl = sum(l.pnl() for l in open_legs if l.side == 'BUY')
+        short_pnl = sum(l.pnl() for l in open_legs if l.side == 'SELL')
+        days_since_entry = (datetime.now().date() - self.entry_datetime.date()).days if self.entry_datetime else 0
+        return {
+            'state': self.state,
+            'month_type': self.month_type,
+            'open_legs': len(open_legs),
+            'closed_legs': len(closed_legs),
+            'role_breakdown': role_counts,
+            'total_pnl': round(total_pnl, 2),
+            'pnl_pct_capital': round(pnl_pct, 4),
+            'long_pnl': round(long_pnl, 2),
+            'short_pnl': round(short_pnl, 2),
+            'net_pnl_consistency': round(long_pnl + short_pnl - total_pnl, 4),  # diagnostic
+            'days_since_entry': days_since_entry,
+            'future_vs_spot_diff': round((self.initial_future - self.initial_spot) if (self.initial_future and self.initial_spot) else 0, 2),
+            'rally_points': round((self._get_mock_spot() - self.initial_spot) if self.initial_spot else 0, 2)
+        }
+
+    def log_metrics(self):
+        """Convenience logger for current metrics."""
+        m = self.get_metrics()
+        self.logger.info(
+            "METRICS state=%s legs(open=%d closed=%d) pnl=%.2f(%.3f%%) long=%.2f short=%.2f roles=%s",
+            m['state'], m['open_legs'], m['closed_legs'], m['total_pnl'], m['pnl_pct_capital'], m['long_pnl'], m['short_pnl'], m['role_breakdown']
+        )
+
     # ---------------------------- Internal Helpers ---------------------------- #
     def _build_initial_positions(self):
         fut_symbol = self._fut_symbol(self.next_expiry)
@@ -312,7 +348,7 @@ class SandwichStrategy:
         self.legs.append(leg)
         self.logger.info(f"ADD {side} {qty} {instrument} role={role} price={price}")
 
-    def _portfolio_pnl(self) -> (float, float):
+    def _portfolio_pnl(self) -> tuple[float, float]:
         total = sum(l.pnl() for l in self.legs if l.open)
         capital_ref = self.config['strategy'].get('capital', 1) or 1
         return total, (total / capital_ref) * 100
