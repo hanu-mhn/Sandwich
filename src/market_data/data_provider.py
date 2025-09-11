@@ -168,14 +168,35 @@ class MarketDataProvider:
             float: Last traded price or None
         """
         try:
-            # Convert NSE symbol to Yahoo format if needed
-            yahoo_symbol = self._convert_to_yahoo_symbol(symbol)
-            
-            if not yahoo_symbol:
+            import yfinance as yf
+
+            # Build candidate symbols list (indices and ETF fallbacks)
+            candidates = self._yahoo_candidates(symbol)
+            if not candidates:
+                self.logger.debug(f"Yahoo conversion returned no candidates for {symbol}")
                 return None
-            
-            # This would require yfinance library
-            # For now, return None
+
+            # Try each candidate with intraday then daily fallback
+            for ysym in candidates:
+                price = None
+                try:
+                    df = yf.download(tickers=ysym, period='1d', interval='1m', progress=False, threads=False)
+                    if df is not None and not df.empty and 'Close' in df.columns:
+                        price = float(df['Close'].iloc[-1])
+                except Exception as e:
+                    self.logger.debug(f"Minute data fetch failed for {ysym}: {e}")
+
+                if price is None:
+                    try:
+                        df = yf.download(tickers=ysym, period='5d', interval='1d', progress=False, threads=False)
+                        if df is not None and not df.empty and 'Close' in df.columns:
+                            price = float(df['Close'].iloc[-1])
+                    except Exception as e:
+                        self.logger.debug(f"Daily data fetch failed for {ysym}: {e}")
+
+                if price is not None:
+                    return price
+
             return None
             
         except Exception as e:
@@ -222,15 +243,35 @@ class MarketDataProvider:
         Returns:
             str: Yahoo symbol or None if not convertible
         """
-        # Basic conversion logic
-        if 'NIFTY' in symbol.upper() and 'BANKNIFTY' not in symbol.upper():
+        symu = symbol.upper()
+
+        # If it's a raw request for underlying indices
+        if symu == 'NIFTY' or symu == '^NSEI':
             return '^NSEI'
-        elif 'BANKNIFTY' in symbol.upper():
-            # Bank Nifty is not directly available on Yahoo
-            return None
-        else:
-            # For individual stocks, add .NS suffix
-            return f"{symbol}.NS"
+        if symu == 'BANKNIFTY' or symu == '^NSEBANK':
+            return '^NSEBANK'
+
+        # Derivative patterns: map BANKNIFTY...FUT/CE/PE to index spot symbol
+        if 'BANKNIFTY' in symu:
+            return '^NSEBANK'
+        if 'NIFTY' in symu and 'BANKNIFTY' not in symu:
+            return '^NSEI'
+
+        # For stocks: append .NS for NSE listings
+        # Strip common suffixes if accidentally passed
+        clean = symu.replace('.NS', '')
+        return f"{clean}.NS"
+
+    def _yahoo_candidates(self, symbol: str) -> List[str]:
+        """Return Yahoo tickers for a given symbol, restricted to BankNifty only."""
+        symu = symbol.upper()
+        # Allow only BankNifty index and its derivatives via ETF fallback
+        if symu in ('BANKNIFTY', '^NSEBANK'):
+            return ['^NSEBANK', 'BANKBEES.NS']
+        if 'BANKNIFTY' in symu:
+            return ['^NSEBANK', 'BANKBEES.NS']
+        # For any non-BankNifty symbol, don't provide candidates (force fallback/None)
+        return []
     
     def set_broker_instance(self, broker):
         """
