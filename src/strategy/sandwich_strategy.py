@@ -66,12 +66,12 @@ class SandwichStrategy:
         'IDLE', 'ACTIVE_PASSIVE', 'FIREFIGHT_STAGE1', 'FIREFIGHT_STAGE2', 'STRADDLE_FINAL', 'CLOSED'
     ]
 
-    def __init__(self, config: Dict, dry_run: bool = True):
+    def __init__(self, config: Dict, dry_run: bool = True, market_data: MarketDataProvider | None = None):
         self.config = config
         self.logger = logging.getLogger(__name__)
         self.dry_run = dry_run
         self.expiry_calc = ExpiryCalculator()
-        self.market_data = MarketDataProvider(config['market_data'])
+        self.market_data = market_data or MarketDataProvider(config['market_data'])
         self.broker = BrokerFactory.create(config['broker'], dry_run)
         self.market_data.set_broker_instance(self.broker)
 
@@ -101,18 +101,28 @@ class SandwichStrategy:
         self.last_adjustment_date: Optional[date] = None
 
     # ---------------------------- Public API ---------------------------- #
-    def execute_entry(self) -> bool:
-        """Attempt entry on monthly expiry day at ~15:00 IST."""
+    def execute_entry(self, force: bool = False, spot_override: float | None = None, future_override: float | None = None,
+                      current_expiry: date | None = None, next_expiry: date | None = None) -> bool:
+        """Attempt entry on monthly expiry day at ~15:00 IST.
+
+        Args:
+            force: bypass date/time gating (for backtests)
+            spot_override: externally supplied spot price
+            future_override: externally supplied future price
+            current_expiry: override current expiry date
+            next_expiry: override next month expiry date
+        """
         now = datetime.now()
         today = now.date()
-        self.current_expiry = self.expiry_calc.get_current_expiry_date(today)
-        if today != self.current_expiry:
-            self.logger.info("Not monthly expiry day; skipping Sandwich entry.")
-            return False
-        # Time gate (allow +/- 5 min)
-        if not self._time_near(now.time(), time(15, 0), tolerance_min=5):
-            self.logger.info("Time not within 3 PM entry window")
-            return False
+        self.current_expiry = current_expiry or self.expiry_calc.get_current_expiry_date(today)
+        if not force:
+            if today != self.current_expiry:
+                self.logger.info("Not monthly expiry day; skipping Sandwich entry.")
+                return False
+            # Time gate (allow +/- 5 min)
+            if not self._time_near(now.time(), time(15, 0), tolerance_min=5):
+                self.logger.info("Time not within 3 PM entry window")
+                return False
 
         # Determine next month expiry
         next_month = self.current_expiry.month + 1
@@ -120,15 +130,15 @@ class SandwichStrategy:
         if next_month > 12:
             next_month = 1
             next_year += 1
-        self.next_expiry = self.expiry_calc.get_monthly_expiry_date(next_year, next_month)
+        self.next_expiry = next_expiry or self.expiry_calc.get_monthly_expiry_date(next_year, next_month)
 
         # Month classification (4-week vs 5-week)
         gap_days = (self.next_expiry - self.current_expiry).days
         self.month_type = '5W' if gap_days > 28 else '4W'
 
         # Spot & Future (mock retrieval via market_data; if future < spot abort)
-        self.initial_spot = self._get_mock_spot()
-        self.initial_future = self._get_mock_future(self.initial_spot)
+        self.initial_spot = spot_override if spot_override is not None else self._get_mock_spot()
+        self.initial_future = future_override if future_override is not None else self._get_mock_future(self.initial_spot)
 
         if self.initial_future < self.initial_spot:
             self.logger.info("Future below spot - aborting entry per rule.")
